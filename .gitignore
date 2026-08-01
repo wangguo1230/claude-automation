@@ -13,3 +13,4 @@ dist/
 build/
 .claude/
 debug_*.png
+package-lock.json

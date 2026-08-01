@@ -281,9 +281,9 @@ class SubscribeWorker:
             return {"success": False, "error": str(exc)[:500]}
 
     def _do_card_flow(self) -> Dict[str, Any]:
-        from .store import get_next_card
+        from .store import get_next_card_locked
 
-        card = get_next_card()
+        card = get_next_card_locked()
         if not card:
             self._log("error", "无可用卡片，请先导入卡号")
             return {"success": False, "error": "无可用卡片"}

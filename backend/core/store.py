@@ -33,6 +33,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 _ACCOUNT_COLUMNS = [
     "id", "email", "password", "session_key", "status",
     "last_error", "last_run_at", "created_at", "used", "disabled",
+    "instance_id", "used_card_number",
 ]
 
 
@@ -97,7 +98,7 @@ def get_account(account_id: str) -> Optional[Dict[str, Any]]:
 def update_account(account_id: str, fields: Dict[str, Any]):
     if not fields:
         return
-    allowed = {"email", "password", "session_key", "status", "last_error", "last_run_at", "created_at", "used", "disabled"}
+    allowed = {"email", "password", "session_key", "status", "last_error", "last_run_at", "created_at", "used", "disabled", "instance_id", "used_card_number"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return
@@ -380,6 +381,126 @@ def mark_card_used(number: str):
     try:
         with conn.cursor() as cur:
             cur.execute("UPDATE cards SET used = TRUE WHERE number = %s", (number,))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        put_conn(conn)
+
+
+def get_next_card_locked() -> Optional[Dict[str, Any]]:
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT " + ", ".join(_CARD_COLUMNS) +
+                " FROM cards WHERE used = FALSE ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED"
+            )
+            row = cur.fetchone()
+            if not row:
+                conn.commit()
+                return None
+            card = _row_to_card(row)
+            cur.execute("UPDATE cards SET used = TRUE WHERE id = %s", (card["id"],))
+        conn.commit()
+        return card
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        put_conn(conn)
+
+
+# ── 多实例支持 ──
+
+def claim_account(account_id: str, instance_id: str) -> bool:
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE accounts SET instance_id = %s WHERE id = %s AND (instance_id = '' OR instance_id IS NULL)",
+                (instance_id, account_id),
+            )
+            ok = cur.rowcount > 0
+        conn.commit()
+        return ok
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        put_conn(conn)
+
+
+def release_account(account_id: str):
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE accounts SET instance_id = '' WHERE id = %s", (account_id,))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        put_conn(conn)
+
+
+def release_instance_accounts(instance_id: str):
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE accounts SET instance_id = '', status = 'idle', last_error = '实例重启' "
+                "WHERE instance_id = %s AND status = 'running'",
+                (instance_id,),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        put_conn(conn)
+
+
+# ── 日志 ──
+
+def append_task_log(account_id: str, instance_id: str, message: str):
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO task_logs (account_id, instance_id, message) VALUES (%s, %s, %s)",
+                (account_id, instance_id, message),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        put_conn(conn)
+
+
+def get_task_logs(account_id: str, since_id: int = 0) -> List[Dict[str, Any]]:
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, message, created_at FROM task_logs WHERE account_id = %s AND id > %s ORDER BY id",
+                (account_id, since_id),
+            )
+            return [
+                {"id": r[0], "message": r[1], "created_at": r[2].isoformat() if r[2] else ""}
+                for r in cur.fetchall()
+            ]
+    finally:
+        put_conn(conn)
+
+
+def clear_task_logs(account_id: str):
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM task_logs WHERE account_id = %s", (account_id,))
         conn.commit()
     except Exception:
         conn.rollback()

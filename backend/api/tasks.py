@@ -35,9 +35,10 @@ def get_status():
 
 
 @router.get("/{account_id}/logs")
-def get_logs(account_id: str, since: int = 0):
-    logs = task_manager.get_logs(account_id, since)
-    return {"logs": logs, "total": since + len(logs)}
+def get_logs(account_id: str, since_id: int = 0):
+    logs = task_manager.get_logs(account_id, since_id)
+    last_id = logs[-1]["id"] if logs else since_id
+    return {"logs": [l["message"] for l in logs], "last_id": last_id}
 
 
 @router.post("/{account_id}/confirm")

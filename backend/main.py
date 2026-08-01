@@ -9,11 +9,13 @@ from .api.tasks import router as tasks_router
 from .api.oauth import router as oauth_router
 from .api.cards import router as cards_router
 from .core.database import init_db
+from .core.task_manager import task_manager
 
 
 @asynccontextmanager
 async def lifespan(app):
     init_db()
+    task_manager.on_startup()
     yield
 
 

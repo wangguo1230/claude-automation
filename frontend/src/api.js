@@ -30,7 +30,7 @@ export const startTasks = (accountIds) => api.post('/tasks/start', { account_ids
 export const startAutoTasks = (accountIds) => api.post('/tasks/start-auto', { account_ids: accountIds || null })
 export const stopTasks = () => api.post('/tasks/stop')
 export const getTaskStatus = () => api.get('/tasks/status')
-export const getTaskLogs = (accountId, since = 0) => api.get(`/tasks/${accountId}/logs?since=${since}`)
+export const getTaskLogs = (accountId, sinceId = 0) => api.get(`/tasks/${accountId}/logs?since_id=${sinceId}`)
 export const confirmTask = (accountId) => api.post(`/tasks/${accountId}/confirm`)
 export const openBrowser = (accountId) => api.post(`/tasks/${accountId}/open-browser`)
 export const fillCard = (accountId) => api.post(`/tasks/${accountId}/fill-card`)

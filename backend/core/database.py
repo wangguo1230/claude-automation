@@ -36,7 +36,9 @@ CREATE TABLE IF NOT EXISTS accounts (
     last_run_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ,
     used BOOLEAN NOT NULL DEFAULT FALSE,
-    disabled BOOLEAN NOT NULL DEFAULT FALSE
+    disabled BOOLEAN NOT NULL DEFAULT FALSE,
+    instance_id TEXT NOT NULL DEFAULT '',
+    used_card_number TEXT NOT NULL DEFAULT ''
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_session_key
     ON accounts (session_key) WHERE session_key IS NOT NULL AND session_key != '';
@@ -54,6 +56,15 @@ CREATE TABLE IF NOT EXISTS cards (
     used BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ
 );
+
+CREATE TABLE IF NOT EXISTS task_logs (
+    id SERIAL PRIMARY KEY,
+    account_id TEXT NOT NULL,
+    instance_id TEXT NOT NULL DEFAULT '',
+    message TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_task_logs_account ON task_logs (account_id, id);
 """
 
 
@@ -88,10 +99,21 @@ def init_db():
         conn.autocommit = True
         with conn.cursor() as cur:
             cur.execute(_CREATE_TABLES_SQL)
+        with conn.cursor() as cur:
+            _alter_tables(cur)
         logger.info("数据库表已就绪")
         _migrate_json_data(conn)
     finally:
         _pool.putconn(conn)
+
+
+def _alter_tables(cur):
+    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'accounts'")
+    existing = {r[0] for r in cur.fetchall()}
+    for col, default in [("instance_id", "''"), ("used_card_number", "''")]:
+        if col not in existing:
+            cur.execute(f"ALTER TABLE accounts ADD COLUMN {col} TEXT NOT NULL DEFAULT {default}")
+            logger.info("accounts 表新增列: %s", col)
 
 
 def get_conn():
