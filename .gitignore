@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+node_modules/
+data/accounts.json
+data/cards.json
+data/config.json
+config.json
+data/ephemeral-chrome/
+data/chrome-profiles/
+*.egg-info/
+dist/
+build/
+.claude/
+debug_*.png
