@@ -21,7 +21,7 @@ echo   关闭此窗口停止所有服务
 echo ================================
 echo.
 
-start "claude-backend" cmd /k "cd /d %~dp0 && uvicorn backend.main:app --reload --reload-exclude data/* --reload-exclude frontend/* --port 8000"
+start "claude-backend" cmd /k "cd /d %~dp0 && python -m uvicorn backend.main:app --reload --reload-exclude data/* --reload-exclude frontend/* --port 8000"
 
 timeout /t 3 /nobreak >nul
 
