@@ -1,8 +1,20 @@
 #!/bin/bash
 cd "$(dirname "$0")"
 
+# ── 修复本机拆分/损坏的 Python 安装 ──────────────────────────
+# C:\Python314 只有解释器缺标准库，标准库在 LOCALAPPDATA，用 PYTHONHOME 桥接。
+export PYTHONHOME="${PYTHONHOME:-C:/Users/$USERNAME/AppData/Local/Programs/Python/Python314}"
+if [ -x "/c/Python314/python.exe" ]; then
+  PY="/c/Python314/python.exe"
+elif command -v py >/dev/null 2>&1; then
+  PY="py"
+else
+  PY="python"
+fi
+
 # 安装后端依赖
-pip install fastapi uvicorn -q 2>/dev/null
+echo "检查 Python 依赖..."
+"$PY" -m pip install -r backend/requirements.txt -q 2>/dev/null
 
 # 安装前端依赖（如果没装过）
 if [ ! -d "frontend/node_modules" ]; then
@@ -12,7 +24,7 @@ fi
 
 # 启动后端
 echo "启动后端 http://localhost:8000 ..."
-uvicorn backend.main:app --reload --reload-exclude "data/*" --reload-exclude "frontend/*" --port 8000 &
+"$PY" -m uvicorn backend.main:app --reload --reload-exclude "data/*" --reload-exclude "frontend/*" --port 8000 &
 BACKEND_PID=$!
 
 # 启动前端
