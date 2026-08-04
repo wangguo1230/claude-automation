@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS cards (
     cvv TEXT NOT NULL DEFAULT '',
     expiry TEXT NOT NULL DEFAULT '',
     used BOOLEAN NOT NULL DEFAULT FALSE,
+    claimed_by TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ
 );
 
@@ -108,12 +109,16 @@ def init_db():
 
 
 def _alter_tables(cur):
-    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'accounts'")
-    existing = {r[0] for r in cur.fetchall()}
-    for col, default in [("instance_id", "''"), ("used_card_number", "''")]:
-        if col not in existing:
-            cur.execute(f"ALTER TABLE accounts ADD COLUMN {col} TEXT NOT NULL DEFAULT {default}")
-            logger.info("accounts 表新增列: %s", col)
+    for table, columns in [
+        ("accounts", [("instance_id", "TEXT NOT NULL DEFAULT ''"), ("used_card_number", "TEXT NOT NULL DEFAULT ''")]),
+        ("cards", [("claimed_by", "TEXT NOT NULL DEFAULT ''")]),
+    ]:
+        cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s", (table,))
+        existing = {r[0] for r in cur.fetchall()}
+        for col, col_type in columns:
+            if col not in existing:
+                cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
+                logger.info("%s 表新增列: %s", table, col)
 
 
 def get_conn():

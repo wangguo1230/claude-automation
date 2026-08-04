@@ -22,11 +22,13 @@ def list_cards():
     safe = []
     for c in cards:
         number = c.get("number", "")
+        claimed = c.get("claimed_by", "")
         safe.append({
             "id": c.get("id"),
             "number_masked": f"**** {number[-4:]}" if len(number) >= 4 else "****",
             "expiry": c.get("expiry", ""),
             "used": c.get("used", False),
+            "claimed": bool(claimed),
             "created_at": c.get("created_at"),
         })
     return {"cards": safe}

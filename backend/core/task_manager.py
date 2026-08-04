@@ -115,6 +115,7 @@ class TaskManager:
         aid = account["id"]
         try:
             worker = SubscribeWorker(account, config, log_callback=self._log)
+            worker._instance_id = self.instance_id
             self._workers[aid] = worker
             result = worker.run(auto_fill_card=auto_fill_card)
 

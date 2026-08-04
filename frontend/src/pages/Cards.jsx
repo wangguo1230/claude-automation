@@ -75,7 +75,7 @@ export default function Cards() {
   const s = { input: { width: '100%', padding: 8, border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13, fontFamily: 'monospace' } }
   const btnStyle = (bg) => ({ padding: '6px 14px', background: bg, color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13 })
 
-  const available = cards.filter(c => !c.used).length
+  const available = cards.filter(c => !c.used && !c.claimed).length
 
   return (
     <div>
@@ -140,6 +140,8 @@ export default function Cards() {
               <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>
                 {c.used ? (
                   <span style={{ display: 'inline-block', padding: '1px 8px', borderRadius: 10, background: '#fee2e2', color: '#991b1b', fontSize: 12, fontWeight: 500 }}>已用</span>
+                ) : c.claimed ? (
+                  <span style={{ display: 'inline-block', padding: '1px 8px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontSize: 12, fontWeight: 500 }}>使用中</span>
                 ) : (
                   <span style={{ display: 'inline-block', padding: '1px 8px', borderRadius: 10, background: '#dcfce7', color: '#166534', fontSize: 12, fontWeight: 500 }}>可用</span>
                 )}

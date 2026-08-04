@@ -281,9 +281,10 @@ class SubscribeWorker:
             return {"success": False, "error": str(exc)[:500]}
 
     def _do_card_flow(self) -> Dict[str, Any]:
-        from .store import get_next_card_locked
+        from .store import get_next_card_locked, release_card
 
-        card = get_next_card_locked()
+        instance_id = getattr(self, '_instance_id', '')
+        card = get_next_card_locked(instance_id)
         if not card:
             self._log("error", "无可用卡片，请先导入卡号")
             return {"success": False, "error": "无可用卡片"}
@@ -306,7 +307,8 @@ class SubscribeWorker:
             self._log("info", "订阅流程完成，请确认完成后卡号将标记为已用")
             return {"success": True, "error": ""}
         except Exception as exc:
-            self._log("error", f"填卡失败: {exc}")
+            release_card(card["number"])
+            self._log("error", f"填卡失败（卡号已释放可复用）: {exc}")
             return {"success": False, "error": str(exc)[:500]}
 
     def run_card_flow(self) -> Dict[str, Any]:

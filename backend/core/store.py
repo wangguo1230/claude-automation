@@ -252,12 +252,12 @@ def save_config(config: Dict[str, Any]) -> Dict[str, Any]:
 
 # ── Cards ──
 
-_CARD_COLUMNS = ["id", "number", "cvv", "expiry", "used", "created_at"]
+_CARD_COLUMNS = ["id", "number", "cvv", "expiry", "used", "claimed_by", "created_at"]
 
 _CARD_FIELD_PATTERNS = {
-    "number": re.compile(r"(?:卡号|card|number)\s*[:：]\s*(\S+)", re.IGNORECASE),
+    "number": re.compile(r"(?:卡号|card|number)\s*[:：]\s*([0-9\s]+)", re.IGNORECASE),
     "cvv": re.compile(r"(?:cvv|cvc|安全码)\s*[:：]?\s*(\d{3,4})", re.IGNORECASE),
-    "expiry": re.compile(r"(?:有效期|expiry|exp|expire)\s*[:：]\s*(\S+)", re.IGNORECASE),
+    "expiry": re.compile(r"(?:有效期|expiry|exp|expire)\s*[:：]\s*([0-9/\-]+)", re.IGNORECASE),
 }
 
 
@@ -298,8 +298,81 @@ def save_cards(cards: List[Dict[str, Any]]):
         put_conn(conn)
 
 
+def _parse_cards_from_text(text: str) -> List[Dict[str, str]]:
+    lines = text.strip().splitlines()
+    cards: List[Dict[str, str]] = []
+
+    # 先尝试多行键值对格式（空行分隔多张卡）
+    blocks: List[List[str]] = []
+    current: List[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if current:
+                blocks.append(current)
+                current = []
+        else:
+            current.append(stripped)
+    if current:
+        blocks.append(current)
+
+    for block in blocks:
+        joined = " ".join(block)
+        has_kv = any(p.search(joined) for p in _CARD_FIELD_PATTERNS.values())
+
+        if has_kv:
+            number = ""
+            cvv = ""
+            expiry = ""
+            for line in block:
+                for field, pattern in _CARD_FIELD_PATTERNS.items():
+                    m = pattern.search(line)
+                    if m:
+                        if field == "number":
+                            number = re.sub(r"\s+", "", m.group(1))
+                        elif field == "cvv":
+                            cvv = m.group(1)
+                        elif field == "expiry":
+                            expiry = m.group(1)
+            if number:
+                cards.append({"number": number, "cvv": cvv, "expiry": expiry})
+            continue
+
+        # 单行格式
+        for line in block:
+            number = ""
+            cvv = ""
+            expiry = ""
+
+            if ";" in line or "；" in line:
+                parts = re.split(r"[;；]", line)
+                for part in parts:
+                    part = part.strip()
+                    for field, pattern in _CARD_FIELD_PATTERNS.items():
+                        m = pattern.search(part)
+                        if m:
+                            if field == "number":
+                                number = re.sub(r"\s+", "", m.group(1))
+                            elif field == "cvv":
+                                cvv = m.group(1)
+                            elif field == "expiry":
+                                expiry = m.group(1)
+
+            if not number and "|" in line:
+                parts = line.split("|")
+                if len(parts) >= 3:
+                    number = re.sub(r"\s+", "", parts[0].strip())
+                    expiry = parts[1].strip()
+                    cvv = parts[2].strip()
+
+            if number:
+                cards.append({"number": number, "cvv": cvv, "expiry": expiry})
+
+    return cards
+
+
 def import_cards_text(text: str) -> Dict[str, Any]:
-    lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+    parsed = _parse_cards_from_text(text)
     conn = get_conn()
     try:
         added = 0
@@ -308,33 +381,9 @@ def import_cards_text(text: str) -> Dict[str, Any]:
             cur.execute("SELECT number FROM cards")
             existing = {r[0] for r in cur.fetchall()}
 
-            for line in lines:
-                number = ""
-                cvv = ""
-                expiry = ""
-
-                if ";" in line or "；" in line:
-                    parts = re.split(r"[;；]", line)
-                    for part in parts:
-                        part = part.strip()
-                        for field, pattern in _CARD_FIELD_PATTERNS.items():
-                            m = pattern.search(part)
-                            if m:
-                                if field == "number":
-                                    number = re.sub(r"\s+", "", m.group(1))
-                                elif field == "cvv":
-                                    cvv = m.group(1)
-                                elif field == "expiry":
-                                    expiry = m.group(1)
-
-                if not number and "|" in line:
-                    parts = line.split("|")
-                    if len(parts) >= 3:
-                        number = re.sub(r"\s+", "", parts[0].strip())
-                        expiry = parts[1].strip()
-                        cvv = parts[2].strip()
-
-                if not number or not number.isdigit() or len(number) < 13:
+            for card in parsed:
+                number = card["number"]
+                if not number.isdigit() or len(number) < 13:
                     skipped += 1
                     continue
                 if number in existing:
@@ -345,7 +394,7 @@ def import_cards_text(text: str) -> Dict[str, Any]:
                 cur.execute(
                     """INSERT INTO cards (number, cvv, expiry, used, created_at)
                        VALUES (%s, %s, %s, FALSE, %s) ON CONFLICT (number) DO NOTHING""",
-                    (number, cvv, expiry, now),
+                    (number, card["cvv"], card["expiry"], now),
                 )
                 if cur.rowcount > 0:
                     existing.add(number)
@@ -380,7 +429,7 @@ def mark_card_used(number: str):
     conn = get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("UPDATE cards SET used = TRUE WHERE number = %s", (number,))
+            cur.execute("UPDATE cards SET used = TRUE, claimed_by = '' WHERE number = %s", (number,))
         conn.commit()
     except Exception:
         conn.rollback()
@@ -389,22 +438,35 @@ def mark_card_used(number: str):
         put_conn(conn)
 
 
-def get_next_card_locked() -> Optional[Dict[str, Any]]:
+def get_next_card_locked(instance_id: str = "") -> Optional[Dict[str, Any]]:
     conn = get_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT " + ", ".join(_CARD_COLUMNS) +
-                " FROM cards WHERE used = FALSE ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED"
+                " FROM cards WHERE used = FALSE AND claimed_by = '' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED"
             )
             row = cur.fetchone()
             if not row:
                 conn.commit()
                 return None
             card = _row_to_card(row)
-            cur.execute("UPDATE cards SET used = TRUE WHERE id = %s", (card["id"],))
+            cur.execute("UPDATE cards SET claimed_by = %s WHERE id = %s", (instance_id, card["id"]))
         conn.commit()
         return card
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        put_conn(conn)
+
+
+def release_card(number: str):
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE cards SET claimed_by = '' WHERE number = %s AND used = FALSE", (number,))
+        conn.commit()
     except Exception:
         conn.rollback()
         raise
